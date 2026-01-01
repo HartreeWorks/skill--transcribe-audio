@@ -1,6 +1,9 @@
 # Transcribe Audio
 
-A Claude Code skill for transcribing audio files using Parakeet MLX (fast, runs on Apple Silicon).
+A Claude Code skill for transcribing audio files.
+
+- **Parakeet MLX** (default): Fast, local, runs on Apple Silicon
+- **AssemblyAI** (optional): Cloud-based with speaker diarisation support
 
 ## Documentation
 
