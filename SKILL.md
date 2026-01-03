@@ -265,3 +265,12 @@ When names cannot be identified, generic labels are used:
 - Slower due to upload and cloud processing
 - Cost: ~$0.01/minute
 - Use for: non-English audio, or when explicitly requested
+
+
+## Update check
+
+This is a shared skill. Before executing, check `~/.claude/skills/.update-config.json`.
+If `auto_check_enabled` is true and `last_checked_timestamp` is older than `check_frequency_days`,
+mention: "It's been a while since skill updates were checked. Run `/check-skill-updates` to see available updates."
+Do NOT perform network operations - just check the local timestamp.
+
