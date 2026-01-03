@@ -18,6 +18,11 @@ Fast local audio transcription with speaker diarisation. Always outputs a diaris
 - `fluidaudio` CLI at `~/.local/bin/fluidaudio`
 - `ffmpeg` for audio format conversion (if needed)
 
+**If Parakeet is not installed:**
+```bash
+uv tool install parakeet-mlx
+```
+
 **If FluidAudio is not installed:**
 ```bash
 bash ~/.claude/skills/transcribe-audio/scripts/setup_fluidaudio.sh
