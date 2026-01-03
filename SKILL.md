@@ -1,11 +1,11 @@
 ---
 name: transcribe-audio
-description: Transcribe audio files using Parakeet MLX with speaker diarisation. Internal skill used by youtube-transcribe and transcribe-call. Can also be invoked directly with "transcribe [audio file path]" or "transcribe this audio".
+description: Transcribe audio files using Parakeet MLX with speaker diarisation and automatic speaker name identification. Internal skill used by youtube-transcribe and transcribe-call. Can also be invoked directly with "transcribe [audio file path]" or "transcribe this audio".
 ---
 
 # Transcribe Audio Skill
 
-Fast local audio transcription with speaker diarisation. Always outputs a diarised transcript with speaker labels.
+Fast local audio transcription with speaker diarisation. Outputs a transcript with speaker labels, automatically identifying speaker names from context where possible.
 
 **Backends:**
 - **Parakeet + FluidAudio** (default): Fast, local, runs on Apple Silicon. Transcription + speaker identification.
@@ -192,6 +192,42 @@ rm -f "${OUTPUT_DIR}/${AUDIO_BASENAME}_assemblyai.json"
 
 ---
 
+### Step 4: Identify speaker names
+
+Before presenting the transcript, attempt to identify speakers by name. Gather hints from multiple sources:
+
+#### 1. Audio filename
+Extract potential names from kebab-case or snake_case filenames:
+- `david-sloan-wilson-trajectory-podcast.mp3` → "David Sloan Wilson", "Trajectory Podcast"
+
+#### 2. Conversation context
+Check if user mentioned names in the conversation:
+- "Transcribe this interview with David Sloan Wilson"
+
+#### 3. YouTube metadata (when invoked via youtube-transcribe)
+Check for a matching metadata file at:
+```
+~/.claude/skills/youtube-transcribe/metadata/<audio-basename>.json
+```
+
+Useful fields:
+- `title`: Often contains guest name (e.g., "David Sloan Wilson – Darwinian Forces...")
+- `channel`: Often contains host name (e.g., "The Trajectory with Dan Faggella")
+- `description`: Detailed guest info and context
+
+#### 4. Transcript content (most reliable)
+Scan the first few paragraphs for:
+- Self-introductions: "This is [NAME]", "I'm [NAME]", "My name is [NAME]"
+- Host introductions: "Our guest is [NAME]", "...is [NAME]. [NAME] is a [profession]"
+- Direct address: "[NAME], welcome to the show", "So, [NAME], tell us about..."
+
+#### Apply names
+1. Cross-reference hints from multiple sources for confidence
+2. Replace generic "Speaker N" labels with actual names where confident
+3. Keep generic labels if uncertain
+
+---
+
 ## Output
 
 Return to the calling skill/user:
@@ -199,13 +235,20 @@ Return to the calling skill/user:
 - **srt_path**: Absolute path to the generated .srt file (with timestamps)
 - **transcript_text**: The full transcript content
 
-All transcripts are markdown with bold speaker labels:
+All transcripts are markdown with bold speaker labels. When names are identified:
+```markdown
+**David Sloan Wilson:** Hello, how are you?
+
+**Daniel Fagelli:** I'm doing well, thanks for asking.
+
+**David Sloan Wilson:** Great to hear!
+```
+
+When names cannot be identified, generic labels are used:
 ```markdown
 **Speaker 1:** Hello, how are you?
 
 **Speaker 2:** I'm doing well, thanks for asking.
-
-**Speaker 1:** Great to hear!
 ```
 
 ## Notes
