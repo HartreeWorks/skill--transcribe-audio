@@ -79,30 +79,105 @@ if [ ! -f ~/.local/bin/fluidaudio ]; then
 fi
 ```
 
-#### 3a.2: Run Parakeet and FluidAudio in parallel
+#### 3a.2: Check audio duration and choose strategy
 
 ```bash
-# Start FluidAudio diarisation in background
-FLUIDAUDIO_JSON="${OUTPUT_DIR}/${AUDIO_BASENAME}_speakers.json"
-~/.local/bin/fluidaudio process "${AUDIO_FILE}" --output "${FLUIDAUDIO_JSON}" --threshold 0.7 &
-FLUIDAUDIO_PID=$!
+# Get duration in seconds
+DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${AUDIO_FILE}" | cut -d. -f1)
+echo "Audio duration: ${DURATION} seconds"
 
-# Run Parakeet transcription (foreground)
-~/.local/bin/parakeet-mlx \
-  --output-format all \
-  --output-dir "${OUTPUT_DIR}" \
-  "${AUDIO_FILE}"
+# Use chunked approach for files > 3 hours (FluidAudio crashes at ~3h 5m with overflow_error)
+# Using 3 hours (10800s) as threshold with safety margin
+if [ "$DURATION" -gt 10800 ]; then
+    echo "Long audio detected (>${DURATION}s) - using chunked FluidAudio approach"
+    USE_CHUNKED=true
+else
+    USE_CHUNKED=false
+fi
+```
+
+#### 3a.3: Run Parakeet transcription
+
+For very long audio files (> 3 hours), use `--local-attention` to reduce memory usage:
+
+```bash
+if [ "$USE_CHUNKED" = true ]; then
+    # Very long audio (> 3h): use local attention for better memory handling
+    ~/.local/bin/parakeet-mlx \
+      --local-attention \
+      --output-format all \
+      --output-dir "${OUTPUT_DIR}" \
+      "${AUDIO_FILE}"
+else
+    # Normal audio (≤ 3h)
+    ~/.local/bin/parakeet-mlx \
+      --output-format all \
+      --output-dir "${OUTPUT_DIR}" \
+      "${AUDIO_FILE}"
+fi
 
 # Delete formats we don't need
 rm -f "${OUTPUT_DIR}/${AUDIO_BASENAME}.json" "${OUTPUT_DIR}/${AUDIO_BASENAME}.vtt" "${OUTPUT_DIR}/${AUDIO_BASENAME}.txt"
 ```
 
-#### 3a.3: Wait for FluidAudio and align speakers
+#### 3a.4: Run FluidAudio diarisation
+
+**For short audio (< 1 hour):** Run directly
 
 ```bash
-# Wait for FluidAudio to complete
-wait $FLUIDAUDIO_PID
+if [ "$USE_CHUNKED" = false ]; then
+    FLUIDAUDIO_JSON="${OUTPUT_DIR}/${AUDIO_BASENAME}_speakers.json"
+    ~/.local/bin/fluidaudio process "${AUDIO_FILE}" --output "${FLUIDAUDIO_JSON}" --threshold 0.5
+fi
+```
 
+**For long audio (> 3 hours):** Chunk into 2-hour segments to avoid FluidAudio overflow errors
+
+```bash
+if [ "$USE_CHUNKED" = true ]; then
+    CHUNK_DIR="/tmp/fluidaudio_chunks_$$"
+    mkdir -p "$CHUNK_DIR"
+    CHUNK_SIZE=7200  # 2-hour chunks (FluidAudio crashes at ~3h 5m)
+    OVERLAP=30
+
+    # Split audio into chunks
+    CHUNK_NUM=0
+    START=0
+    while [ $START -lt $DURATION ]; do
+        ffmpeg -y -i "${AUDIO_FILE}" -ss $START -t $((CHUNK_SIZE + OVERLAP)) -acodec copy "$CHUNK_DIR/chunk_${CHUNK_NUM}.mp3" 2>/dev/null
+        CHUNK_NUM=$((CHUNK_NUM + 1))
+        START=$((START + CHUNK_SIZE))
+    done
+
+    # Process chunks in parallel (use threshold 0.5 for better speaker separation)
+    for i in $(seq 0 $((CHUNK_NUM - 1))); do
+        ~/.local/bin/fluidaudio process "$CHUNK_DIR/chunk_${i}.mp3" \
+          --output "$CHUNK_DIR/speakers_${i}.json" \
+          --threshold 0.5 &
+    done
+    wait
+
+    # Merge chunk results
+    CHUNK_FILES=""
+    for i in $(seq 0 $((CHUNK_NUM - 1))); do
+        CHUNK_FILES="$CHUNK_FILES $CHUNK_DIR/speakers_${i}.json"
+    done
+
+    FLUIDAUDIO_JSON="${OUTPUT_DIR}/${AUDIO_BASENAME}_speakers.json"
+    python3 ~/.claude/skills/transcribe-audio/scripts/merge_fluidaudio_chunks.py \
+      "${FLUIDAUDIO_JSON}" \
+      --chunks $CHUNK_FILES \
+      --chunk-size $CHUNK_SIZE \
+      --overlap $OVERLAP
+
+    # Clean up chunks
+    rm -rf "$CHUNK_DIR"
+fi
+```
+
+#### 3a.5: Align speakers with transcript
+
+```bash
 # Run alignment script to merge transcript with speaker segments
 python3 ~/.claude/skills/transcribe-audio/scripts/align_speakers.py \
   "${SRT_PATH}" \
@@ -113,7 +188,7 @@ python3 ~/.claude/skills/transcribe-audio/scripts/align_speakers.py \
 rm -f "${FLUIDAUDIO_JSON}"
 ```
 
-#### 3a.4: Return results
+#### 3a.6: Return results
 
 ```bash
 echo "transcript_path: ${TRANSCRIPT_PATH}"
@@ -258,6 +333,9 @@ When names cannot be identified, generic labels are used:
 - Very fast: ~5 minutes for 1 hour of audio on M4 Pro
 - Runs entirely locally - no internet required
 - Speaker identification via FluidAudio (runs on Apple Neural Engine)
+- **Long audio (> 3 hours)**: Automatically chunks audio into 2-hour segments for FluidAudio (which crashes with `std::overflow_error` at ~3h 5m), then merges results with speaker ID reconciliation via embedding similarity
+- **Speaker threshold**: Uses 0.5 (not 0.7) for better separation of similar-sounding speakers
+- **Parakeet long audio**: Uses `--local-attention` flag to reduce memory usage on files > 3 hours
 
 ### AssemblyAI (cloud - only when requested)
 - Supports multiple languages (auto-detected)
