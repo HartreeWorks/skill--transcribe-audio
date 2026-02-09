@@ -343,9 +343,3 @@ When names cannot be identified, generic labels are used:
 - Slower due to upload and cloud processing
 - Cost: ~$0.01/minute
 - Use for: non-English audio, or when explicitly requested
-
-
-## Update check
-
-This skill is managed by [skills.sh](https://skills.sh). To check for updates, run `npx skills update`.
-
