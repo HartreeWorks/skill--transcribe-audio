@@ -188,7 +188,21 @@ python3 ~/.claude/skills/transcribe-audio/scripts/align_speakers.py \
 rm -f "${FLUIDAUDIO_JSON}"
 ```
 
-#### 3a.6: Return results
+#### 3a.6: Optional transcript cleanup (remove filler words like "um")
+
+By default, the skill removes conservative filler words from the **markdown transcript only** (not the SRT).
+
+- Disable per-run with: `TRANSCRIBE_REMOVE_FILLERS=0`
+
+```bash
+if [ "${TRANSCRIBE_REMOVE_FILLERS:-1}" != "0" ]; then
+  python3 ~/.claude/skills/transcribe-audio/scripts/cleanup_filler_words.py \
+    "${TRANSCRIPT_PATH}" \
+    --backup
+fi
+```
+
+#### 3a.7: Return results
 
 ```bash
 echo "transcript_path: ${TRANSCRIPT_PATH}"

@@ -8,7 +8,8 @@ A Claude Code skill for transcribing audio files with speaker diarisation and au
 
 ## Documentation
 
-See [SKILL.md](./SKILL.md) for complete documentation and usage instructions.
+- See [SKILL.md](./SKILL.md) for complete documentation and usage instructions.
+- See [REFERENCE.md](./REFERENCE.md) for detailed reference notes (including filler-word cleanup behaviour).
 
 ## Installation
 
